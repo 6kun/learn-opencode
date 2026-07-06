@@ -7,7 +7,7 @@ lesson: "5.10b"
 duration: 30 分钟
 practice: 40 分钟
 level: 进阶
-description: OpenCode SDK 提供 21 个 API 模块、35+ 种事件类型，覆盖会话、文件、配置、MCP、LSP 等全部功能。
+description: OpenCode SDK 提供 20 个 API 模块加 1 个权限响应方法、32 种事件类型，覆盖会话、文件、配置、MCP、LSP 等全部功能。
 tags:
   - SDK
   - API
@@ -18,7 +18,7 @@ prerequisite:
 
 # 5.10b API 参考
 
-> **一句话总结**：OpenCode SDK 提供 21 个 API 模块、35+ 种事件类型，覆盖会话、文件、配置、MCP、LSP 等全部功能。
+> **一句话总结**：OpenCode SDK 提供 20 个 API 模块加 1 个权限响应方法、32 种事件类型，覆盖会话、文件、配置、MCP、LSP 等全部功能。
 
 ---
 
@@ -88,13 +88,23 @@ SDK 客户端通过 `OpencodeClient` 类暴露以下模块：
 | `session.summarize({ path, body })` | 总结会话内容 | `boolean` |
 | `session.messages({ path })` | 获取会话消息列表 | `{info: Message, parts: Part[]}[]` |
 | `session.message({ path })` | 获取单条消息详情 | `{info: Message, parts: Part[]}` |
-| `session.prompt({ path, body })` | 发送消息并等待响应 | `AssistantMessage` |
+| `session.prompt({ path, body })` | 发送消息并等待响应 | `{info: AssistantMessage, parts: Part[]}` |
 | `session.promptAsync({ path, body })` | 异步发送消息（不等待） | `204 No Content` |
 | `session.command({ path, body })` | 发送命令 | `{info: AssistantMessage, parts: Part[]}` |
 | `session.shell({ path, body })` | 运行 shell 命令 | `AssistantMessage` |
 | `session.revert({ path, body })` | 撤销到指定消息 | `Session` |
 | `session.unrevert({ path })` | 恢复已撤销的消息 | `Session` |
-| `session.permission({ path, body })` | 响应权限请求 | `boolean` |
+
+::: tip 权限响应
+Session 类**没有** `permission()` 方法。响应权限请求请使用 `OpencodeClient` 上的直接方法：
+
+```typescript
+await client.postSessionIdPermissionsPermissionId({
+  path: { id: "session-id", permissionID: "perm-id" },
+  body: { response: "always" },  // "once" | "always" | "reject"
+})
+```
+:::
 
 ### 代码示例
 
@@ -138,16 +148,135 @@ const diff = await client.session.diff({
 await client.session.abort({
   path: { id: session.data!.id },
 })
+
+// 分享会话（生成可访问的 URL）
+const shared = await client.session.share({ path: { id: session.data!.id } })
+console.log(`分享链接: ${shared.data?.share?.url}`)
+
+// 取消分享
+await client.session.unshare({ path: { id: session.data!.id } })
 ```
 
 ### prompt body 参数
 
 | 参数 | 类型 | 描述 |
 |------|------|------|
-| `parts` | `Part[]` | 消息内容部分 |
+| `parts` | `Array<TextPartInput \| FilePartInput \| AgentPartInput \| SubtaskPartInput>` | 消息内容部分 |
 | `model` | `{providerID, modelID}` | 指定模型 |
 | `noReply` | `boolean` | 设为 `true` 则不触发 AI 响应（注入上下文） |
 | `agent` | `string` | 使用指定 Agent |
+
+### Token 消耗与费用
+
+每次 AI 回复都会返回 token 消耗和费用，无需额外请求。`session.prompt()` 返回的 `info` 字段（类型 `AssistantMessage`）自带 `cost` 和 `tokens`：
+
+```typescript
+const result = await client.session.prompt({
+  path: { id: sessionID },
+  body: {
+    parts: [{ type: "text", text: "分析这段代码" }],
+  },
+})
+
+const info = result.data?.info  // AssistantMessage
+if (info) {
+  console.log(`费用: $${info.cost}`)
+  console.log(`输入 token: ${info.tokens.input}`)
+  console.log(`输出 token: ${info.tokens.output}`)
+  console.log(`推理 token: ${info.tokens.reasoning}`)
+  console.log(`缓存读取: ${info.tokens.cache.read}`)
+  console.log(`缓存写入: ${info.tokens.cache.write}`)
+}
+```
+
+> 来源：`types.gen.ts:112-141`（AssistantMessage 类型）
+
+**按步统计**：如果模型分多步执行（如工具调用），每步结束时会产生一个 `StepFinishPart`，同样带 `cost` 和 `tokens` 字段，可以拿到**每一步**的消耗：
+
+```typescript
+// 遍历消息的所有 Part，统计每步消耗
+const msg = await client.session.message({
+  path: { id: sessionID, messageID: "msg-1" },
+})
+
+for (const part of msg.data?.parts ?? []) {
+  if (part.type === "step-finish") {
+    console.log(`步骤费用: $${part.cost}, 输出: ${part.tokens.output} tokens`)
+  }
+}
+```
+
+> 来源：`types.gen.ts:315-332`（StepFinishPart 类型）
+
+::: tip 统计整个会话的累计消耗
+遍历 `session.messages()` 返回的所有消息，把每条 `AssistantMessage` 的 `cost` 和 `tokens` 累加即可。
+:::
+
+### 工具调用监控
+
+AI 回复中的 `ToolPart` 记录了每次工具调用的完整生命周期。通过 `part.state` 可以判断工具处于哪个阶段，拿到输入、输出和耗时：
+
+```typescript
+const msg = await client.session.message({
+  path: { id: sessionID, messageID: "msg-1" },
+})
+
+for (const part of msg.data?.parts ?? []) {
+  if (part.type !== "tool") continue
+  console.log(`工具: ${part.tool}`)
+  const state = part.state
+  switch (state.status) {
+    case "completed":
+      console.log(`  结果: ${state.output}`)
+      console.log(`  耗时: ${state.time.end - state.time.start}ms`)
+      break
+    case "error":
+      console.log(`  错误: ${state.error}`)
+      break
+    case "running":
+      console.log(`  正在执行...`)
+      break
+    case "pending":
+      console.log(`  等待执行`)
+      break
+  }
+}
+```
+
+工具调用的四种状态：
+
+| 状态 | 说明 | 可用字段 |
+|------|------|---------|
+| `pending` | 等待执行 | `input`（参数）、`raw`（原始输入） |
+| `running` | 正在执行 | `input`、`title`、`time.start` |
+| `completed` | 已完成 | `input`、`output`（结果）、`title`、`time.{start,end}`、`attachments`（附件） |
+| `error` | 出错 | `input`、`error`（错误信息）、`time.{start,end}` |
+
+> 来源：`types.gen.ts:237-305`（ToolState 四种子类型 + ToolPart）
+
+### 会话代码变更统计
+
+`Session` 类型自带 `summary` 字段，记录这个会话修改了多少代码，无需手动 diff：
+
+```typescript
+const session = await client.session.get({ path: { id: sessionID } })
+const summary = session.data?.summary
+if (summary) {
+  console.log(`修改文件: ${summary.files}`)
+  console.log(`新增行: ${summary.additions}`)
+  console.log(`删除行: ${summary.deletions}`)
+  // summary.diffs 包含每个文件的差异
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `summary.files` | `number` | 修改的文件数 |
+| `summary.additions` | `number` | 新增行数 |
+| `summary.deletions` | `number` | 删除行数 |
+| `summary.diffs` | `FileDiff[]?` | 每个文件的差异明细 |
+
+> 来源：`types.gen.ts:533-560`（Session.summary 字段）
 
 ---
 
@@ -225,10 +354,9 @@ for (const file of status.data ?? []) {
 
 | 参数 | 类型 | 描述 |
 |------|------|------|
-| `query` | `string` | 搜索模式（支持 glob） |
-| `type` | `"file" \| "directory"` | 搜索类型 |
-| `directory` | `string` | 覆盖搜索根目录 |
-| `limit` | `number` | 最大结果数（1-200） |
+| `query` | `string` | 搜索模式（支持 glob，必填） |
+| `dirs` | `"true" \| "false"` | 是否只返回目录（字符串，可选） |
+| `directory` | `string` | 覆盖搜索根目录（可选） |
 
 ```typescript
 // 搜索文本
@@ -238,7 +366,12 @@ const matches = await client.find.text({
 
 // 查找文件
 const tsFiles = await client.find.files({
-  query: { query: "*.ts", type: "file", limit: 50 },
+  query: { query: "*.ts" },
+})
+
+// 只查找目录
+const dirs = await client.find.files({
+  query: { query: "src", dirs: "true" },
 })
 
 // 查找符号
@@ -429,8 +562,10 @@ const status = await client.mcp.status()
 await client.mcp.add({
   body: {
     name: "my-mcp",
-    type: "local",
-    command: ["node", "mcp-server.js"],
+    config: {
+      type: "local",
+      command: ["node", "mcp-server.js"],
+    },
   },
 })
 
@@ -572,7 +707,7 @@ for (const cmd of commands.data ?? []) {
 
 ## 事件类型完整列表
 
-SDK 支持 35+ 种实时事件，通过 `client.event.subscribe()` 订阅。
+SDK 支持 32 种实时事件，通过 `client.event.subscribe()` 订阅。
 
 ### 服务器事件
 
@@ -699,7 +834,7 @@ for await (const event of events.stream) {
           id: event.properties.sessionID,
           permissionID: event.properties.id,
         },
-        body: { allow: true },
+        body: { response: "always" },  // "once" 允许一次 | "always" 总是允许 | "reject" 拒绝
       })
       break
       
@@ -862,6 +997,35 @@ type ApiError = {
 }
 ```
 
+`AssistantMessage.error` 可能是以下 5 种之一：
+
+| 错误类型 | 含义 | 常见原因 |
+|---------|------|---------|
+| `ProviderAuthError` | 认证失败 | API Key 无效或过期 |
+| `MessageOutputLengthError` | 输出超长 | 超过模型最大输出 token |
+| `MessageAbortedError` | 被中断 | 用户调了 `session.abort()` 或超时 |
+| `ApiError` | API 返回错误 | 速率限制（429）、服务端错误（500）等，看 `data.statusCode` 和 `data.isRetryable` |
+| `UnknownError` | 未知错误 | 其他未分类错误 |
+
+```typescript
+const result = await client.session.prompt({ path: { id: sessionID }, body: { ... } })
+const error = result.data?.info.error
+if (error) {
+  switch (error.name) {
+    case "APIError":
+      if (error.data.isRetryable) console.log("可重试，稍后再试")
+      else console.log(`API 错误 ${error.data.statusCode}: ${error.data.message}`)
+      break
+    case "ProviderAuthError":
+      console.log("API Key 问题，检查认证配置")
+      break
+    // ...
+  }
+}
+```
+
+> 来源：`types.gen.ts:70-110`（MessageError 五种子类型）
+
 ### 其他类型
 
 ```typescript
@@ -932,11 +1096,24 @@ type FileDiff = {
 ## 本课小结
 
 你学会了：
+1. **20 个 API 模块加 1 个权限响应方法**的完整方法列表
 
-1. **21 个 API 模块**的完整方法列表
-2. **35+ 种事件类型**及其属性
+2. **32 种事件类型**及其属性
 3. **核心类型定义**：Session、Message、Part、Todo、Agent 等
 4. **实验性 API**：Tool 管理、PTY 终端
+
+---
+
+## 下一课预告
+
+> V1 讲完了，但 OpenCode 还有一个**实验性的下一代 API 入口** V2。下一课我们学习 **[5.10c SDK V2 下一代 API](./10c-sdk-v2)**。
+>
+> 你会学到：
+> - V2 的 27 个模块和三层路由架构
+> - 独立的 Permission/Question 模块（跨 session 管理权限和提问）
+> - Session2 增强方法（interrupt/wait/compact/切换模型/切换 agent）
+> - Sync、Worktree、Workspace 等 V2 新概念
+> - 从 V1 迁移到 V2 的完整指南
 
 ---
 

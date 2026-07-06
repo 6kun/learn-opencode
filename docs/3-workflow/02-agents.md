@@ -253,7 +253,7 @@ General Agent 擅长复杂研究和多步骤任务。
 | 子会话看不到 | 没有展开或导航到错误的层级 | 用 `<leader>→` / `<leader>←` 导航，或者按 `<leader>↑` 返回父会话 |
 | 想切换到 Explore，但 Tab 找不到 | <kbd>Tab</kbd> 只能在主代理（Primary Agent）之间切换 | Explore 是子代理（Subagent），只能用 `@explore` 调用 |
 | 子 Agent 被中断后找不到 | 会话可能已关闭或导航到错误层级 | 按 `<leader>↑` 返回父会话，然后用 `<leader>→` 查找 |
-| Plan Agent 提示"是否允许编辑" | Plan Agent 默认对文件修改和命令执行都设置为 `ask` | 这是正常行为，Plan 是用于分析的，执行操作前会请求批准 |
+| Plan Agent 提示"是否允许编辑" | Plan Agent 默认 `edit: deny`（禁止编辑，仅 `.opencode/plans/*.md` 和全局 plans 目录允许） | 这是正常行为，Plan 是用于分析的；如需编辑，切到 Build Agent |
 | General Agent 没有执行多步任务 | 任务描述不够清晰或任务不够复杂 | 在提示中明确说明需要执行哪些步骤，或确保任务确实需要多步执行 |
 
 ---

@@ -114,20 +114,20 @@ OpenCode 有两类 Agent：
 | 名称 | 模式 | 默认权限 | 说明 |
 |------|------|---------|------|
 | `build` | primary | 全部允许 | 默认开发 Agent，所有工具可用 |
-| `plan` | primary | edit: deny（仅 `.opencode/plans/*.md` 允许） | 只读规划，不修改代码 |
-| `general` | subagent | todoread/todowrite: deny | 通用研究，多步任务 |
-| `explore` | subagent | 仅允许 grep/glob/list/bash/read/webfetch/websearch/codesearch | 快速代码探索 |
+| `plan` | primary | edit: deny（仅 `.opencode/plans/*.md` 和全局 plans 目录允许） | 只读规划，不修改代码 |
+| `general` | subagent | todowrite: deny | 通用研究，多步任务 |
+| `explore` | subagent | 仅允许 grep/glob/list/bash/read/webfetch/websearch | 快速代码探索 |
 
 > **关于 Explore Agent 的探索深度**：调用 Explore 时可以指定探索深度级别。AI 会根据任务描述自动判断，你也可以在提示词中明确指定：
 > - **quick**：基本搜索，快速定位目标文件
 > - **medium**：中等探索，平衡速度和覆盖面
 > - **very thorough**：全面分析，跨多个位置和命名约定进行搜索
 >
-> 来源：`agent.ts:150`
+> 来源：`agent.ts:213`
 
-> **关于 Plan Agent**：它不是"需要确认才能编辑"，而是**默认禁止编辑**，只有 `.opencode/plans/*.md` 目录下的文件允许写入。这是为了让你在规划阶段专注思考，不被代码修改分心。
+> **关于 Plan Agent**：它不是"需要确认才能编辑"，而是**默认禁止编辑**（`edit: deny`），只有 `.opencode/plans/*.md`（项目级）和全局数据目录下的 `plans/*.md` 允许写入。bash 命令默认允许（继承全局 `*: allow`）。这是为了让你在规划阶段专注思考，不被代码修改分心。
 > 
-> 来源：`agent.ts:69-83`
+> 来源：`agent.ts:171-175`
 
 ### 隐藏的内置 Agent
 
@@ -135,11 +135,11 @@ OpenCode 有两类 Agent：
 
 | 名称 | 用途 | 说明 |
 |------|------|------|
-| `title` | 生成会话标题 | 使用 small_model |
+| `title` | 生成会话标题 | temperature: 0.5（模型由其他模块选择） |
 | `summary` | 生成会话摘要 | 用于压缩 |
 | `compaction` | 压缩上下文 | 当上下文过长时自动触发 |
 
-> 来源：`agent.ts:122-166`
+> 来源：`agent.ts:219-264`
 
 ---
 
@@ -247,12 +247,13 @@ permission:
 | `description` | string | **建议填**。Agent 简介，影响主 Agent 的自动选择决策 |
 | `mode` | enum | `subagent` \| `primary` \| `all`。默认 `all` |
 | `model` | string | 格式 `provider/model`。不填则继承主 Agent 当前模型 |
+| `variant` | string | 默认模型变体（如 thinking）。仅当 agent 配置了自己的 `model` 时生效；不配 model 则无意义 |
 | `prompt` | string | 系统提示词（JSON 配置专用，Markdown 中使用正文） |
 | `temperature` | number | 0-1，控制回答的随机性 |
 | `top_p` | number | 0-1，核采样参数 |
 | `steps` | number | 最大迭代步数，防止死循环 |
 | `hidden` | boolean | `true` 则从 @ 自动补全菜单中隐藏 |
-| `color` | string | 十六进制颜色 `#RRGGBB`，用于界面区分 |
+| `color` | string | 十六进制 `#RRGGBB` 或主题色名（`primary`/`secondary`/`accent`/`success`/`warning`/`error`/`info`），用于界面区分 |
 | `permission` | object | 权限配置对象 |
 | `disable` | boolean | 是否禁用此 Agent |
 | `options` | object | 透传参数容器，用于存放不常用的 Provider 参数 |
@@ -540,7 +541,7 @@ Working directory: /path/to/project         ← 环境信息
 | mode 不对 | 用了 `plan` 或 `build` | 应为 `primary` / `subagent` / `all` |
 | description 报必填错误 | 版本问题 | 实际是可选的，建议还是填写 |
 | maxSteps 不生效 | 已废弃 | 使用 `steps` 替代 |
-| color 格式错误 | 不是十六进制 | 使用 `#RRGGBB` 格式 |
+| color 格式错误 | 不是有效值 | 使用 `#RRGGBB` 或主题色名（`primary`/`accent` 等） |
 | 嵌套目录 Agent 名称 | 不知道怎么调用 | 不设置 `name` 时名称包含路径：`folder/agent-name`；设置 `name` 后会覆盖默认名称 |
 
 ---

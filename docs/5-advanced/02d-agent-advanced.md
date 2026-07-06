@@ -235,7 +235,7 @@ permission:
 
 Agent 配置中未知的字段会**透传给 provider**。这允许你使用 provider 特定的参数。
 
-> 来源：`agents.mdx:569-591`，`config.ts:487`，`agent.ts:193`
+> 来源：`packages/core/src/v1/config/agent.ts:62-66`（normalize 把未知字段塞进 options）、`packages/opencode/src/agent/agent.ts:292`（options 合并）
 
 ### 配置示例
 
@@ -299,7 +299,7 @@ Agent 可以放在子目录中组织：
 @review/security 帮我审计这段代码
 ```
 
-> 来源：`config.ts:243-255`
+> 来源：`packages/opencode/src/config/agent.ts:22-29`
 
 ### MCP 工具通配符控制
 
@@ -362,7 +362,7 @@ hidden: true  # 从 @ 菜单隐藏
 - 只通过 Task tool 被其他 Agent 调用
 - 系统级 Agent
 
-> 来源：`config.ts:468-471`
+> 来源：`packages/core/src/v1/config/agent.ts:27-29`
 
 ### name 覆盖文件名
 
@@ -375,7 +375,7 @@ description: ...
 
 默认情况下，Agent 名称是文件名（不含 .md）。可以用 `name` 字段覆盖。
 
-> 来源：`agent.ts:191`
+> 来源：`agent.ts:290`
 
 ---
 

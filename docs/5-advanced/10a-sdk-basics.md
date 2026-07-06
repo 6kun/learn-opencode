@@ -110,10 +110,10 @@ server.close()
 | `hostname` | `string` | 服务器主机名 | `127.0.0.1` |
 | `port` | `number` | 服务器端口 | `4096` |
 | `signal` | `AbortSignal` | 用于取消的中止信号 | `undefined` |
-| `timeout` | `number` | 服务器启动超时（毫秒） | `2000+` |
+| `timeout` | `number` | 服务器启动超时（毫秒） | `5000` |
 | `config` | `Config` | 配置对象，覆盖 `opencode.json` | `{}` |
 
-> **来源**：`packages/sdk/js/src/server.ts:4-10`
+> **来源**：`packages/sdk/js/src/server.ts:5-11`
 
 #### 配置覆盖示例
 
@@ -164,7 +164,7 @@ const sessions = await client.session.list()
 | `throwOnError` | `boolean` | 出错时抛出异常而非返回 | `false` |
 | `directory` | `string` | 指定项目目录（通过 `X-Opencode-Directory` header 传递） | `undefined` |
 
-> **来源**：`packages/sdk/js/src/gen/client/types.gen.ts:10-52`、`packages/sdk/js/src/client.ts:8`
+> **来源**：`packages/sdk/js/src/gen/client/types.gen.ts:10-52`、`packages/sdk/js/src/client.ts:33`
 
 #### 多项目目录切换
 
@@ -207,7 +207,7 @@ Authorization: `Basic ${Buffer.from("opencode:password").toString("base64")}`
 | 默认 | `opencode` | 服务器默认用户名 |
 | 自定义 | 环境变量 `OPENCODE_SERVER_USERNAME` 的值 | 如果服务器设置了自定义用户名 |
 
-> **来源**：`packages/opencode/src/server/server.ts:84-87`（Basic Auth 中间件）
+> **来源**：`packages/opencode/src/server/auth.ts:36-42`（Basic Auth header 生成）、`packages/opencode/src/server/routes/instance/httpapi/middleware/authorization.ts`（请求解析）
 
 ---
 
@@ -243,7 +243,7 @@ tui.close()
 | `signal` | `AbortSignal` | 用于取消的中止信号 |
 | `config` | `Config` | 配置对象 |
 
-> **来源**：`packages/sdk/js/src/server.ts:12-19`
+> **来源**：`packages/sdk/js/src/server.ts:13-20`
 
 ---
 
@@ -318,16 +318,12 @@ const textResults = await client.find.text({
 
 // 查找文件（支持 glob 模式）
 const files = await client.find.files({
-  query: { 
-    query: "*.ts", 
-    type: "file",
-    limit: 100,  // 最多返回 100 个结果
-  },
+  query: { query: "*.ts" },
 })
 
-// 查找目录
+// 只查找目录
 const dirs = await client.find.files({
-  query: { query: "src", type: "directory" },
+  query: { query: "src", dirs: "true" },
 })
 
 // 读取文件内容
@@ -518,7 +514,7 @@ async function batchCodeReview(directory: string) {
 
     // 查找所有 TypeScript 文件
     const files = await client.find.files({
-      query: { query: "*.ts", type: "file", directory },
+      query: { query: "*.ts", directory },
     })
 
     console.log(`找到 ${files.data?.length} 个文件`)
@@ -586,4 +582,4 @@ batchCodeReview("./src")
 
 ## 下一课预告
 
-> [5.10b API 参考](./10b-sdk-reference) 将详细介绍所有 21 个 API 模块、完整类型定义和 35+ 种事件类型。
+> [5.10b API 参考](./10b-sdk-reference) 将详细介绍所有 20 个 API 模块加 1 个权限响应方法、完整类型定义和 32 种事件类型。

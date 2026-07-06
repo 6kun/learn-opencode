@@ -373,7 +373,8 @@ export default defineConfig({
             collapsed: true,
             items: [
               { text: '5.10a SDK 基础', link: '/5-advanced/10a-sdk-basics' },
-          { text: '5.10b API 参考', link: '/5-advanced/10b-sdk-reference' },
+              { text: '5.10b API 参考', link: '/5-advanced/10b-sdk-reference' },
+              { text: '5.10c SDK V2 下一代 API', link: '/5-advanced/10c-sdk-v2' },
             ]
           },
           { text: '5.11 企业版', link: '/5-advanced/11-enterprise' },

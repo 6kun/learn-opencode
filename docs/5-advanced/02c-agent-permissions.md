@@ -60,7 +60,7 @@ Agent 级别 permission
 
 **后面的覆盖前面的**。
 
-> 来源：`config.ts:418-447`，`agent.ts:194`
+> 来源：`packages/core/src/v1/config/permission.ts`（Schema 定义）、`packages/opencode/src/agent/agent.ts:145`（Permission.merge 调用）
 
 ### 规则优先级：最后匹配获胜
 
@@ -93,7 +93,7 @@ Agent 级别 permission
 | 权限 | 匹配对象 | 说明 |
 |------|---------|------|
 | `read` | 文件路径 | 读取文件 |
-| `edit` | 文件路径 | 所有文件修改（edit/write/patch/multiedit） |
+| `edit` | 文件路径 | 所有文件修改（edit/write/patch） |
 | `glob` | glob 模式 | 文件搜索 |
 | `grep` | 正则表达式 | 内容搜索 |
 | `list` | 目录路径 | 列出目录内容 |
@@ -101,18 +101,16 @@ Agent 级别 permission
 | `task` | subagent 名称 | 调用子 Agent |
 | `skill` | skill 名称 | 加载技能 |
 | `lsp` | - | LSP 查询（目前不支持细粒度） |
-| `todoread` | - | 读取 Todo 列表 |
-| `todowrite` | - | 更新 Todo 列表 |
+| `todowrite` | - | 待办列表读写（门控 `todowrite` 工具） |
 | `webfetch` | URL | 获取网页内容 |
 | `websearch` | 查询字符串 | 网页搜索 |
-| `codesearch` | 查询字符串 | 代码搜索 |
 | `external_directory` | - | 访问项目目录之外的路径 |
 | `doom_loop` | - | 检测重复调用（同一工具连续调用 3 次相同输入） |
 | `question` | - | 向用户提问（默认 deny，防止 subagent 打扰用户） |
-| `plan_enter` | - | 进入计划模式（代码已弃用） |
+| `plan_enter` | - | 进入计划模式（保留为权限键，但无对应工具实现；用户通过 Tab 键切换到 plan agent） |
 | `plan_exit` | - | 退出计划模式，切换到 build agent |
 
-> 来源：`config.ts:614-645`
+> 来源：`packages/core/src/v1/config/permission.ts:17-36`
 
 ---
 
@@ -230,7 +228,6 @@ edit 权限控制**所有文件修改操作**，包括：
 - `edit` 工具
 - `write` 工具
 - `patch` 工具
-- `multiedit` 工具
 
 ### 常见配置
 
@@ -355,10 +352,10 @@ TaskTool 的工作流程如下：
        - 检查调用者是否有 task 权限
        - 过滤可访问的 subagent
        ↓
-    2. 创建子会话
-       - 在主会话下创建独立 session
-       - 标题：描述 + (@subagent subagent)
-       - 应用限制权限（todowrite/todoread/task）
+     2. 创建子会话
+        - 在主会话下创建独立 session
+        - 标题：描述 + (@subagent subagent)
+        - 应用限制权限（todowrite/task）
        ↓
     3. 调用子代理
        - 子代理在独立 session 中执行
@@ -379,8 +376,7 @@ TaskTool 的工作流程如下：
 
 | 限制 | 说明 | 原因 |
 |------|------|------|
-| `todowrite: deny` | 禁止写入待办列表 | 防止子代理干扰主 Agent 任务管理 |
-| `todoread: deny` | 禁止读取待办列表 | 同上 |
+| `todowrite: deny` | 禁止读写待办列表 | 防止子代理干扰主 Agent 任务管理 |
 | `task: deny` | 禁止再调用子代理 | 防止无限递归 |
 
 ### 实际使用示例
@@ -486,7 +482,7 @@ OpenCode 默认配置了一些安全规则：
 }
 ```
 
-> 来源：`agent.ts:67-72`
+> 来源：`agent.ts:130-135`
 
 ### doom_loop 检测
 
@@ -523,7 +519,7 @@ OpenCode 默认配置了一些安全规则：
 }
 ```
 
-> 来源：`agent.ts:56-64`, `question.ts`
+> 来源：`agent.ts:126`、`question.ts`
 
 ### external_directory 保护
 
@@ -541,10 +537,10 @@ OpenCode 默认配置了一些安全规则：
 
 控制 Agent 是否能切换计划模式：
 
-- **`plan_enter`**：进入计划模式（代码已实现但被注释弃用，计划模式通过 `/plan` 命令触发）
-- **`plan_exit`**：退出计划模式，切换到 build agent
+- **`plan_enter`**：进入计划模式（保留为权限键，但源码中无对应工具实现；用户通过 Tab 键切换到 plan agent 进入）
+- **`plan_exit`**：退出计划模式，切换到 build agent（有 `PlanExitTool` 工具实现）
 
-默认值均为 `deny`，只有 build agent 和 plan agent 允许调用。
+默认均为 `deny`。build 额外允许 `plan_enter`（用于切到 plan），plan 额外允许 `plan_exit`（用于切回 build）。
 
 ```jsonc
 {
@@ -559,7 +555,7 @@ OpenCode 默认配置了一些安全规则：
 }
 ```
 
-> 来源：`agent.ts:56-65`, `plan.ts`
+> 来源：`agent.ts:127-128,149,164`、`plan.ts`
 
 ### 废弃字段：tools
 
@@ -596,18 +592,19 @@ OpenCode 默认配置了一些安全规则：
 ```
 
 **迁移说明**：
-- `tools` 中的 `write`/`edit`/`patch`/`multiedit` 都映射到 `edit` 权限
+- `tools` 中的 `write`/`edit`/`patch` 映射到 `edit` 权限
+- `multiedit` 等其他工具名不在此映射列表中，会作为独立的 permission 键处理
 - `true` → `"allow"`，`false` → `"deny"`
 - 系统会自动转换旧配置，但建议手动更新
 
-> 来源：`config.ts:675-737`
+> 来源：`packages/core/src/v1/config/agent.ts:71-76`
 
 ### 子代理的隐式限制
 
 除了配置的权限外，子代理（无论 subagent 还是被调用的 all 模式）还受到以下**硬编码限制**：
 
 1. **Todo 工具禁用**
-   - 子代理**永远无法使用** `todowrite` 和 `todoread`。
+   - 子代理**永远无法使用** `todowrite`。
    - 这是为了防止子代理干扰主 Agent 的任务列表管理。
 
 2. **主代理专属工具禁用**
@@ -788,7 +785,7 @@ permission:
 2. **15+ 权限类型**：bash、edit、task、skill、question、plan_enter、plan_exit 等
 3. **细粒度控制**：使用对象语法和通配符
 4. **TaskTool 机制**：子代理调用、参数定义、执行流程
-5. **子代理限制**：todowrite/todoread/task 禁用，防止无限递归
+5. **子代理限制**：todowrite/task 禁用，防止无限递归
 6. **内置安全规则**：.env 保护、doom_loop、external_directory
 7. **安全最佳实践**：最小权限、显式允许、敏感操作 ask
 
